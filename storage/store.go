@@ -19,3 +19,13 @@ func Get(key string) (string, bool) {
 	value, exits := storage[key]
 	return value, exits
 }
+
+func Delete(key string) bool {
+	mutex.Lock()
+	defer mutex.Unlock()
+	_, exists := storage[key]
+	if exists {
+		delete(storage, key)
+	}
+	return exists
+}

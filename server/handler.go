@@ -67,6 +67,17 @@ func HandleConn(conn net.Conn) error {
 				response = "-ERR invalid GET command\r\n"
 			}
 
+		case "DEL":
+			if len(args) < 2 {
+				response = "-ERR wrong number of arguments for 'DEL'\r\n"
+			}
+			key := args[1]
+			exists := storage.Delete(key)
+			if exists {
+				response = ":1\r\n" // RESP format for successful deletion
+			}
+			response = ":0\r\n" // RESP format if key does not exist
+
 		default:
 			response = "-ERR unknown command\r\n"
 		}
