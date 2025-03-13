@@ -3,73 +3,78 @@ package server
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"redis/storage"
 	"strings"
-	"time"
 )
 
 func HandleConn(conn net.Conn) error {
 	defer conn.Close()
 
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-
 	reader := bufio.NewReader(conn)
 
 	for {
-		message, readerErr := reader.ReadString('\n')
+		args, err := ParseRESP(reader)
 
-		if readerErr != nil {
-			return fmt.Errorf("Client disconnected or read error %w \n", readerErr)
+		if err != nil {
+			if err == io.EOF {
+				log.Println("Client disconnected")
+			} else {
+				log.Printf("RESP parse error %v", err)
+				conn.Write([]byte("-Err parsing error\r\n"))
+			}
+			return err
 		}
 
-		message = strings.TrimSpace(message)
-		parts := strings.Fields(message)
-
-		if len(parts) == 0 {
+		if len(args) == 0 {
 			continue
 		}
 
-		command := strings.ToUpper(parts[0])
+		command := strings.ToUpper(args[0])
 		response := ""
 
 		switch command {
+
 		case "PING":
 			response = "+PONG\r\n"
 
 		case "ECHO":
-			if len(parts) >= 2 {
-				response = fmt.Sprintf("+%s\r\n", strings.Join(parts[1:], " "))
+			if len(args) > 1 {
+				response = fmt.Sprintf("$%d\r\n%s\r\n", len(args[1]), args[1])
 			} else {
-				response = "-ERR Missing argument for echo"
+				response = "-Err missing argument(s) for ECHO"
 			}
+
 		case "SET":
-			if len(parts) >= 3 {
-				storage.Set(parts[1], strings.Join(parts[2:], " "))
+			if len(args) >= 3 {
+				storage.Set(args[1], args[2])
 				response = "+OK\r\n"
 			} else {
-				response = "-ERR Invalid set command"
+				response = "-Err Invalid number of arguments for set command"
 			}
-		case "GET":
-			if len(parts) == 2 {
-				value, exists := storage.Get(parts[1])
 
+		case "GET":
+			if len(args) >= 2 {
+				value, exists := storage.Get(args[1])
 				if exists {
 					response = fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
 				} else {
-					response = "+nil"
+					response = "$-1\r\n"
 				}
+			} else {
+				response = "-ERR invalid GET command\r\n"
 			}
 
 		default:
-			response = "-ERR Invalid command\r\n"
+			response = "-ERR unknown command\r\n"
 		}
 
-		conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		_, writeErr := conn.Write([]byte(response))
-
-		if writeErr != nil {
-			return fmt.Errorf("Error while writing to the connection %w", readerErr)
+		_, err = conn.Write([]byte(response))
+		if err != nil {
+			log.Printf("Write error: %v", err)
+			return err
 		}
 	}
 }
