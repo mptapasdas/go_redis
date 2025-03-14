@@ -2,30 +2,24 @@ package storage
 
 import "sync"
 
-var (
-	storage = make(map[string]string)
-	mutex   sync.RWMutex
-)
+var store sync.Map
 
 func Set(key, value string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-	storage[key] = value
+	store.Store(key, value)
 }
 
 func Get(key string) (string, bool) {
-	mutex.RLock()
-	defer mutex.RUnlock()
-	value, exits := storage[key]
-	return value, exits
+	value, exists := store.Load(key)
+	if !exists {
+		return "", false
+	}
+	return value.(string), true
 }
 
 func Delete(key string) bool {
-	mutex.Lock()
-	defer mutex.Unlock()
-	_, exists := storage[key]
+	_, exists := store.Load(key)
 	if exists {
-		delete(storage, key)
+		store.Delete(key)
 	}
 	return exists
 }
